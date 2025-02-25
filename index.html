@@ -1,0 +1,163 @@
+from flask import Flask, render_template, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
+import datetime
+
+app = Flask(__name__)
+
+# ตั้งค่าฐานข้อมูล SQLite
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = 'mysecretkey'
+db = SQLAlchemy(app)
+
+# สร้างโมเดล User
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    age = db.Column(db.Integer, nullable=False)
+    weight = db.Column(db.Float, nullable=False)
+    height = db.Column(db.Float, nullable=False)
+
+# สร้างโมเดลบันทึกแคลอรี่
+class CalorieRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    date = db.Column(db.Date, default=datetime.date.today, nullable=False)
+    calories_in = db.Column(db.Float, nullable=False)
+    calories_out = db.Column(db.Float, nullable=False)
+
+# สร้างตารางในฐานข้อมูล
+with app.app_context():
+    db.create_all()
+
+# หน้าแรก
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+# หน้าลงทะเบียน
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form['name']
+        age = int(request.form['age'])
+        weight = float(request.form['weight'])
+        height = float(request.form['height'])
+        
+        user = User(name=name, age=age, weight=weight, height=height)
+        db.session.add(user)
+        db.session.commit()
+        
+        return redirect(url_for('home'))
+    return render_template('register.html')
+
+# หน้าคำนวณพลังงาน
+@app.route('/calories', methods=['GET', 'POST'])
+def calories():
+    users = User.query.all()
+    if request.method == 'POST':
+        user_id = int(request.form['user_id'])
+        calories_in = float(request.form['calories_in'])
+        calories_out = float(request.form['calories_out'])
+        
+        record = CalorieRecord(user_id=user_id, calories_in=calories_in, calories_out=calories_out)
+        db.session.add(record)
+        db.session.commit()
+        
+        return redirect(url_for('history', user_id=user_id))
+    
+    return render_template('calories.html', users=users)
+
+# หน้าประวัติพลังงาน
+@app.route('/history/<int:user_id>')
+def history(user_id):
+    user = User.query.get(user_id)
+    records = CalorieRecord.query.filter_by(user_id=user_id).all()
+    return render_template('history.html', user=user, records=records)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>โปรแกรมคำนวณพลังงาน</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>ยินดีต้อนรับสู่โปรแกรมคำนวณพลังงาน</h1>
+    <a href="{{ url_for('register') }}">ลงทะเบียน</a>
+    <a href="{{ url_for('calories') }}">คำนวณพลังงาน</a>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>ลงทะเบียน</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>ลงทะเบียนผู้ใช้</h1>
+    <form method="POST">
+        <label>ชื่อ:</label>
+        <input type="text" name="name" required><br>
+        <label>อายุ:</label>
+        <input type="number" name="age" required><br>
+        <label>น้ำหนัก (กก.):</label>
+        <input type="number" step="0.1" name="weight" required><br>
+        <label>ส่วนสูง (ซม.):</label>
+        <input type="number" step="0.1" name="height" required><br>
+        <button type="submit">ลงทะเบียน</button>
+    </form>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>คำนวณพลังงาน</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>คำนวณพลังงานเข้า-ออก</h1>
+    <form method="POST">
+        <label>เลือกผู้ใช้:</label>
+        <select name="user_id" required>
+            {% for user in users %}
+            <option value="{{ user.id }}">{{ user.name }}</option>
+            {% endfor %}
+        </select><br>
+        <label>พลังงานที่ได้รับ (kcal):</label>
+        <input type="number" step="0.1" name="calories_in" required><br>
+        <label>พลังงานที่ใช้ไป (kcal):</label>
+        <input type="number" step="0.1" name="calories_out" required><br>
+        <button type="submit">บันทึก</button>
+    </form>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>ประวัติพลังงาน</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>ประวัติพลังงานของ {{ user.name }}</h1>
+    <table border="1">
+        <tr>
+            <th>วันที่</th>
+            <th>พลังงานที่ได้รับ</th>
+            <th>พลังงานที่ใช้</th>
+        </tr>
+        {% for record in records %}
+        <tr>
+            <td>{{ record.date }}</td>
+            <td>{{ record.calories_in }}</td>
+            <td>{{ record.calories_out }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
